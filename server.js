@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const cors = require('cors');
 const fetch = require('node-fetch');
+const FormData = require('form-data');
 
 const app = express();
 app.use(cors());
@@ -40,16 +41,22 @@ app.post('/upload', uploadMiddleware, async (req, res) => {
         const fileName = `${Date.now()}-${req.file.originalname.replace(/[^a-zA-Z0-9.]/g, '_')}`;
         const uploadUrl = `https://uploads.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/releases/tags/${GITHUB_TAG}/assets?name=${fileName}`;
 
+        // Create multipart form data
+        const form = new FormData();
+        form.append('file', req.file.buffer, {
+            filename: fileName,
+            contentType: req.file.mimetype || 'video/mp4',
+        });
+
         console.log(`Attempting to upload ${fileName} to GitHub...`);
 
         const response = await fetch(uploadUrl, {
             method: 'POST',
             headers: {
                 'Authorization': `token ${GITHUB_TOKEN}`,
-                'Content-Type': 'application/octet-stream',
-                'Content-Length': req.file.size.toString() // FIX: Must be a string
+                ...form.getHeaders() // sets the correct Content-Type with boundary
             },
-            body: req.file.buffer
+            body: form
         });
 
         const responseText = await response.text();
