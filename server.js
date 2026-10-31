@@ -39,14 +39,28 @@ app.post('/upload', uploadMiddleware, async (req, res) => {
         }
 
         const fileName = `${Date.now()}-${req.file.originalname.replace(/[^a-zA-Z0-9.]/g, '_')}`;
-        const uploadUrl = `https://uploads.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/releases/tags/${GITHUB_TAG}/assets?name=${fileName}`;
 
-        // Create multipart form data
-        const form = new FormData();
-        form.append('file', req.file.buffer, {
-            filename: fileName,
-            contentType: req.file.mimetype || 'video/mp4',
+        // --- STEP 1: Get the Release ID by Tag ---
+        console.log(`Fetching release ID for tag ${GITHUB_TAG}...`);
+        const releaseRes = await fetch(`https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/releases/tags/${GITHUB_TAG}`, {
+            headers: { 'Authorization': `token ${GITHUB_TOKEN}` }
         });
+        
+        if (!releaseRes.ok) {
+            throw new Error('Failed to fetch release. Make sure the tag ' + GITHUB_TAG + ' exists.');
+        }
+        
+        const releaseData = await releaseRes.json();
+        const releaseId = releaseData.id;
+
+        if (!releaseId) {
+            throw new Error('Release ID not found in GitHub response.');
+        }
+
+        console.log(`Found Release ID: ${releaseId}`);
+
+        // --- STEP 2: Upload the asset as raw binary ---
+        const uploadUrl = `https://uploads.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/releases/${releaseId}/assets?name=${fileName}`;
 
         console.log(`Attempting to upload ${fileName} to GitHub...`);
 
@@ -54,15 +68,16 @@ app.post('/upload', uploadMiddleware, async (req, res) => {
             method: 'POST',
             headers: {
                 'Authorization': `token ${GITHUB_TOKEN}`,
-                ...form.getHeaders() // sets the correct Content-Type with boundary
+                'Content-Type': 'application/octet-stream',
+                'Content-Length': req.file.size.toString()
             },
-            body: form
+            body: req.file.buffer // Send raw binary buffer
         });
 
         const responseText = await response.text();
         let data = {};
         try { data = JSON.parse(responseText); } catch(e) {
-            return res.status(500).json({ error: 'GitHub returned HTML instead of JSON. Make sure the release tag ' + GITHUB_TAG + ' exists.' });
+            return res.status(500).json({ error: 'GitHub returned HTML instead of JSON. Check the logs for more details.' });
         }
 
         if (response.ok && data.browser_download_url) {
@@ -73,6 +88,7 @@ app.post('/upload', uploadMiddleware, async (req, res) => {
             res.status(500).json({ error: data.message || 'GitHub upload failed.' });
         }
     } catch (err) {
+        console.log("Server Error:", err.message);
         res.status(500).json({ error: err.message });
     }
 });
@@ -80,7 +96,15 @@ app.post('/upload', uploadMiddleware, async (req, res) => {
 app.get('/stream/:filename', async (req, res) => {
     try {
         const fileName = req.params.filename;
-        const assetUrl = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/releases/tags/${GITHUB_TAG}/assets`;
+        
+        // Get release ID first
+        const releaseRes = await fetch(`https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/releases/tags/${GITHUB_TAG}`, {
+            headers: { 'Authorization': `token ${GITHUB_TOKEN}` }
+        });
+        const releaseData = await releaseRes.json();
+        const releaseId = releaseData.id;
+
+        const assetUrl = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/releases/${releaseId}/assets`;
 
         const assetRes = await fetch(assetUrl, { headers: { 'Authorization': `token ${GITHUB_TOKEN}` } });
         const assets = await assetRes.json();
