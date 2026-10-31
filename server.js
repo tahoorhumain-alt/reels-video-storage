@@ -5,19 +5,36 @@ const fetch = require('node-fetch');
 
 const app = express();
 app.use(cors());
-const upload = multer({ storage: multer.memoryStorage() });
+
+// INCREASE FILE SIZE LIMIT TO 100MB
+const upload = multer({ 
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 100 * 1024 * 1024 } 
+});
 
 // --- YOUR GITHUB DETAILS ---
-const GITHUB_USER = 'tahoorhumain-alt'; 
+const GITHUB_USER = 'tahoorhumain-alt'; // Replace if needed
 const GITHUB_REPO = 'reels-video-storage'; 
 const GITHUB_TAG = 'v1.0.0';
-
-// 🛡️ The token is pulled securely from Render's settings
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN; 
 
-app.post('/upload', upload.single('video'), async (req, res) => {
+// Custom middleware to catch upload errors and return JSON
+const uploadMiddleware = (req, res, next) => {
+    upload.single('video')(req, res, function (err) {
+        if (err instanceof multer.MulterError) {
+            return res.status(400).json({ error: 'Upload Error: ' + err.message });
+        } else if (err) {
+            return res.status(500).json({ error: 'Server Error: ' + err.message });
+        }
+        next();
+    });
+};
+
+app.post('/upload', uploadMiddleware, async (req, res) => {
     try {
-        if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file received by server. Make sure the field name is "video".' });
+        }
 
         const fileName = `${Date.now()}-${req.file.originalname.replace(/[^a-zA-Z0-9.]/g, '_')}`;
         const uploadUrl = `https://uploads.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/releases/tags/${GITHUB_TAG}/assets?name=${fileName}`;
