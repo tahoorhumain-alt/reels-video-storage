@@ -8,10 +8,12 @@ app.use(cors());
 const upload = multer({ storage: multer.memoryStorage() });
 
 // --- YOUR GITHUB DETAILS ---
-const GITHUB_USER = 'tahoorhumain-alt'; // Your username from the screenshot
-const GITHUB_REPO = 'reels-video-storage'; // The repo you just made
+const GITHUB_USER = 'tahoorhumain-alt'; 
+const GITHUB_REPO = 'reels-video-storage'; 
 const GITHUB_TAG = 'v1.0.0';
-const GITHUB_TOKEN = 'YOUR_GITHUB_TOKEN'; // PASTE YOUR NEW TOKEN HERE
+
+// 🛡️ The token is pulled securely from Render's settings
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN; 
 
 app.post('/upload', upload.single('video'), async (req, res) => {
     try {
