@@ -6,19 +6,17 @@ const fetch = require('node-fetch');
 const app = express();
 app.use(cors());
 
-// INCREASE FILE SIZE LIMIT TO 100MB
 const upload = multer({ 
     storage: multer.memoryStorage(),
-    limits: { fileSize: 100 * 1024 * 1024 } 
+    limits: { fileSize: 100 * 1024 * 1024 } // 100MB limit
 });
 
 // --- YOUR GITHUB DETAILS ---
-const GITHUB_USER = 'tahoorhumain-alt'; // Replace if needed
+const GITHUB_USER = 'tahoorhumain-alt'; 
 const GITHUB_REPO = 'reels-video-storage'; 
 const GITHUB_TAG = 'v1.0.0';
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN; 
 
-// Custom middleware to catch upload errors and return JSON
 const uploadMiddleware = (req, res, next) => {
     upload.single('video')(req, res, function (err) {
         if (err instanceof multer.MulterError) {
@@ -32,29 +30,39 @@ const uploadMiddleware = (req, res, next) => {
 
 app.post('/upload', uploadMiddleware, async (req, res) => {
     try {
+        if (!GITHUB_TOKEN) {
+            return res.status(500).json({ error: 'Server Error: GITHUB_TOKEN is missing in Render Environment Variables.' });
+        }
         if (!req.file) {
-            return res.status(400).json({ error: 'No file received by server. Make sure the field name is "video".' });
+            return res.status(400).json({ error: 'No file received by server. Field name must be "video".' });
         }
 
         const fileName = `${Date.now()}-${req.file.originalname.replace(/[^a-zA-Z0-9.]/g, '_')}`;
         const uploadUrl = `https://uploads.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/releases/tags/${GITHUB_TAG}/assets?name=${fileName}`;
+
+        console.log(`Attempting to upload ${fileName} to GitHub...`);
 
         const response = await fetch(uploadUrl, {
             method: 'POST',
             headers: {
                 'Authorization': `token ${GITHUB_TOKEN}`,
                 'Content-Type': 'application/octet-stream',
-                'Content-Length': req.file.size
+                'Content-Length': req.file.size.toString() // FIX: Must be a string
             },
             body: req.file.buffer
         });
 
-        const data = await response.json();
+        const responseText = await response.text();
+        let data = {};
+        try { data = JSON.parse(responseText); } catch(e) {
+            return res.status(500).json({ error: 'GitHub returned HTML instead of JSON. Make sure the release tag ' + GITHUB_TAG + ' exists.' });
+        }
 
-        if (data.browser_download_url) {
+        if (response.ok && data.browser_download_url) {
             const playUrl = `${req.protocol}://${req.get('host')}/stream/${fileName}`;
             res.json({ success: true, url: playUrl });
         } else {
+            console.log("GitHub Error:", data);
             res.status(500).json({ error: data.message || 'GitHub upload failed.' });
         }
     } catch (err) {
